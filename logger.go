@@ -19,7 +19,6 @@ import (
 	"io"
 	"log"
 	"log/syslog"
-	"net"
 	"os"
 	"strings"
 	"sync"
@@ -178,7 +177,10 @@ func (l *Logger) DisconnectSyslog() error {
 func (l *Logger) format(fields map[string]interface{}) func(string, ...interface{}) string {
 	var tags []string
 	for key, value := range fields {
-		field := fmt.Sprintf("[%s=%v]", key, value)
+		field := "[" + key + "]"
+		if value != nil {
+			field = fmt.Sprintf("[%s=%v]", key, value)
+		}
 		tags = append(tags, field)
 	}
 	data := strings.Join(tags, " ")
@@ -219,7 +221,7 @@ func (l *Logger) write(p syslog.Priority, msg string) {
 	}
 }
 
-func (l *Logger) writeSyslog(p syslog.Priority, msg string) {
+func (l *Logger) writeSyslog(p syslog.Priority, msg string) { //nolint: gocyclo
 	// ensure msg ends in a \n
 	if !strings.HasSuffix(msg, "\n") {
 		msg += "\n"
@@ -254,9 +256,10 @@ func (l *Logger) writeSyslog(p syslog.Priority, msg string) {
 		panic("unknown log level")
 	}
 	if err != nil {
-		if netErr, ok := err.(*net.OpError); ok && netErr.Op == "dial" {
-			// TODO(ben): handle disconnect
-		}
+		// TODO(ben): handle disconnect
+		// if netErr, ok := err.(*net.OpError); ok && netErr.Op == "dial" {
+		//
+		// }
 
 		// Get backup output to write to
 		l.outMu.RLock()

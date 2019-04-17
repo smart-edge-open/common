@@ -16,10 +16,8 @@ package log_test
 
 import (
 	"bytes"
-	"io"
 	"log/syslog"
 	"regexp"
-	"strings"
 	"testing"
 
 	"github.com/smartedgemec/log"
@@ -56,15 +54,6 @@ func TestPrinterPrint(t *testing.T) {
 		log.Print(test.inputLvl, test.inputMsg)
 		if actual := buf.String(); !test.expect.MatchString(actual) {
 			t.Errorf("[%s] expected to match regexp %q, got %q", desc, test.expect, actual)
-		}
-	}
-}
-
-func writeout(w io.Writer) func(syslog.Priority, string) {
-	return func(_ syslog.Priority, msg string) {
-		w.Write([]byte(msg))
-		if !strings.HasSuffix(msg, "\n") {
-			w.Write([]byte("\n"))
 		}
 	}
 }

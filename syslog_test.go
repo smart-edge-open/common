@@ -26,7 +26,7 @@ import (
 	"github.com/smartedgemec/log"
 )
 
-func TestLoggerConnectSyslogLocal(t *testing.T) {
+func TestLoggerConnectSyslogLocal(t *testing.T) { // nolint: gocyclo
 	var buf bytes.Buffer
 	log := new(log.Logger)
 	log.SetOutput(&buf)
@@ -35,7 +35,7 @@ func TestLoggerConnectSyslogLocal(t *testing.T) {
 	if err := log.ConnectSyslog(""); err != nil {
 		t.Fatalf("error connecting to local syslog: %v", err)
 	}
-	defer log.DisconnectSyslog()
+	defer func() { _ = log.DisconnectSyslog() }()
 
 	// Determine local syslog file
 	var path string
@@ -103,6 +103,6 @@ WaitForWrite:
 	}
 
 	// Wait for tail to exit
-	cmd.Process.Kill()
-	cmd.Wait()
+	_ = cmd.Process.Kill()
+	_ = cmd.Wait()
 }
