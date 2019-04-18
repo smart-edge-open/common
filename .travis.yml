@@ -15,7 +15,6 @@
 language: go
 go:
   - 1.12.x
-  - 1.11.x
 
 services:
   - docker
@@ -27,10 +26,14 @@ before_install:
   # golangci-lint
   - curl -sfL https://install.goreleaser.com/github.com/golangci/golangci-lint.sh | sh -s -- -b $(go env GOPATH)/bin v1.16.0
 
-before_script:
+# before_script:
   # Get project dependencies
-  - go mod download
+  # - go mod download
 
 script:
+  # Lint code
   - golangci-lint run
-  - docker run --rm -it -v $(pwd):/app -w /app golang:1.12 sh -c 'apt-get update && apt-get install -y rsyslog && rsyslogd && go test -v -race ./...'
+  # Test Go 1.11 support
+  - docker run --rm -v $(pwd):/app -w /app golang:1.11 sh -c 'apt-get update && apt-get install -y rsyslog && rsyslogd && go test -v -race ./...'
+  # Test Go 1.12 support
+  - docker run --rm -v $(pwd):/app -w /app golang:1.12 sh -c 'apt-get update && apt-get install -y rsyslog && rsyslogd && go test -v -race ./...'
