@@ -15,10 +15,12 @@
 package log
 
 import (
+	"fmt"
 	"io"
 	"log/syslog"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 const (
@@ -59,6 +61,34 @@ func SetFacility(p syslog.Priority) { DefaultLogger.SetFacility(p) }
 
 // GetFacility returns the facility portion of the current syslog priority.
 func GetFacility() syslog.Priority { return DefaultLogger.GetFacility() }
+
+// ParseLevel is a convienience function that returns syslog.Priority
+// Allowed input values: emerg, emergency, alert, crit, critical, err, error,
+// warn, warning, notice, info, information, debug
+func ParseLevel(prio string) (syslog.Priority, error) {
+	var lvl syslog.Priority
+	err := fmt.Errorf("Invalid prio: %q", prio)
+
+	switch strings.ToLower(prio) {
+	case "emerg", "emergency":
+		lvl, err = syslog.LOG_EMERG, nil
+	case "alert":
+		lvl, err = syslog.LOG_ALERT, nil
+	case "crit", "critical":
+		lvl, err = syslog.LOG_CRIT, nil
+	case "err", "error":
+		lvl, err = syslog.LOG_ERR, nil
+	case "warning", "warn":
+		lvl, err = syslog.LOG_WARNING, nil
+	case "notice":
+		lvl, err = syslog.LOG_NOTICE, nil
+	case "info", "information":
+		lvl, err = syslog.LOG_INFO, nil
+	case "debug":
+		lvl, err = syslog.LOG_DEBUG, nil
+	}
+	return lvl, err
+}
 
 // SetLevel alters the verbosity level that log will print at and below. It
 // takes values syslog.LOG_EMERG...syslog.LOG_DEBUG. If the priority includes a
