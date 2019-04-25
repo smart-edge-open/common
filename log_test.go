@@ -34,6 +34,39 @@ func TestDefaultLoggerSetOutput(t *testing.T) {
 	}
 }
 
+func TestParseLevel(t *testing.T) {
+	lvls := map[string]syslog.Priority{
+		"emerg":       syslog.LOG_EMERG,
+		"emergency":   syslog.LOG_EMERG,
+		"alert":       syslog.LOG_ALERT,
+		"crit":        syslog.LOG_CRIT,
+		"critical":    syslog.LOG_CRIT,
+		"err":         syslog.LOG_ERR,
+		"error":       syslog.LOG_ERR,
+		"warn":        syslog.LOG_WARNING,
+		"warning":     syslog.LOG_WARNING,
+		"notice":      syslog.LOG_NOTICE,
+		"info":        syslog.LOG_INFO,
+		"information": syslog.LOG_INFO,
+		"debug":       syslog.LOG_DEBUG,
+	}
+
+	for lvlStr, lvl := range lvls {
+		l, err := log.ParseLevel(lvlStr)
+		if err != nil {
+			t.Errorf("ParseLevel failed with %s", err.Error())
+		}
+		if l != lvl {
+			t.Errorf("expected syslog priority %d, got %d", lvl, l)
+		}
+	}
+
+	_, err := log.ParseLevel("invalid")
+	if err == nil {
+		t.Errorf("ParseLevel was expected to fail")
+	}
+}
+
 func TestDefaultLoggerPriority(t *testing.T) {
 	defer func() { log.DefaultLogger = new(log.Logger) }()
 
