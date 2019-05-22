@@ -15,6 +15,7 @@
 package log
 
 import (
+	"crypto/tls"
 	"fmt"
 	"io"
 	"log"
@@ -23,6 +24,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	slog "github.com/smartedgemec/log/syslog"
 )
 
 // Logger implements syslog logging funcs and can be connected to a syslog
@@ -41,7 +44,7 @@ type Logger struct {
 	isKernel   bool // facility was explicityly set to KERN
 
 	syslogMu sync.RWMutex
-	syslogW  *syslog.Writer
+	syslogW  *slog.Writer
 }
 
 // Must be called before any changing any writers or priority in order to
@@ -132,6 +135,22 @@ func (l *Logger) getLevel() syslog.Priority {
 // ConnectSyslog connects to a remote syslog. If addr is an empty string, it
 // will connect to the local syslog service.
 func (l *Logger) ConnectSyslog(addr string) error {
+	net := "udp"
+	if addr == "" {
+		net = ""
+	}
+	return l.connect(net, addr, nil, slog.DialTLS)
+}
+
+// ConnectSyslogTLS connects to a remote syslog, performing a TLS client
+// handshake. This is always done over TCP and the addr cannot be empty (in an
+// attempt to connect to the local syslog service).
+func (l *Logger) ConnectSyslogTLS(addr string, conf *tls.Config) error {
+	return l.connect("tcp", addr, conf, slog.DialTLS)
+}
+
+func (l *Logger) connect(net, addr string, conf *tls.Config,
+	dial func(string, string, syslog.Priority, string, *tls.Config) (*slog.Writer, error)) error {
 	l.once.Do(l.initPrinter)
 
 	l.syslogMu.Lock()
@@ -148,17 +167,10 @@ func (l *Logger) ConnectSyslog(addr string) error {
 	priority := syslevel(syslog.LOG_DEBUG, l.getFacility())
 	l.priorityMu.RUnlock()
 
-	// If TCP is ever desired then a ConnectSyslogTCP func can be added.
-	net := "udp"
-	if addr == "" {
-		net = "" // connect locally
-	}
-	syslogW, err := syslog.Dial(net, addr, priority, svcName)
-	if err != nil {
-		return err
-	}
-	l.syslogW = syslogW
-	return nil
+	// Dial syslog
+	var err error
+	l.syslogW, err = dial(net, addr, priority, svcName, conf)
+	return err
 }
 
 // DisconnectSyslog closes the connection to syslog.
