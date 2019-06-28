@@ -41,7 +41,7 @@ type Logger struct {
 	priorityMu sync.RWMutex
 	priority   syslog.Priority
 	disabled   bool // level was explicitly set to EMERG
-	isKernel   bool // facility was explicityly set to KERN
+	isKernel   bool // facility was explicitly set to KERN
 
 	syslogMu sync.RWMutex
 	syslogW  *slog.Writer
