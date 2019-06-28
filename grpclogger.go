@@ -98,7 +98,8 @@ func (l *GrpcLogger) Error(args ...interface{}) {
 	l.Logger.Err(args...)
 }
 
-// Errorln logs to error logger. Arguments are handled in the manner of fmt.Println.
+// Errorln logs to error logger. 
+// Arguments are handled in the manner of fmt.Println.
 func (l *GrpcLogger) Errorln(args ...interface{}) { l.Error(args...) }
 
 // Errorf logs to error logger. All arguments are forwarded.
@@ -107,7 +108,8 @@ func (l *GrpcLogger) Errorf(format string, args ...interface{}) {
 	l.Logger.Errf(format, args...)
 }
 
-// Fatal initializes, logs to alert logger and callse os.exit with value 1. All arguments are forwarded to logger. 
+// Fatal initializes, logs to alert logger and 
+// callse os.exit with value 1. All arguments are forwarded to logger. 
 func (l *GrpcLogger) Fatal(args ...interface{}) {
 	l.once.Do(l.init)
 	l.Logger.Alert(args...)
@@ -117,14 +119,16 @@ func (l *GrpcLogger) Fatal(args ...interface{}) {
 // Fatalln executes Fatal func and forwards all arguments.
 func (l *GrpcLogger) Fatalln(args ...interface{}) { l.Fatal(args...) }
 
-// Fatalf initializes, logs to alertf logger and callse os.exit with value 1. All arguments are forwarded to logger. 
+// Fatalf initializes, logs to alertf logger and 
+// callse os.exit with value 1. All arguments are forwarded to logger. 
 func (l *GrpcLogger) Fatalf(format string, args ...interface{}) {
 	l.once.Do(l.init)
 	l.Logger.Alertf(format, args...)
 	os.Exit(1)
 }
 
-// V returns information whether or not logger level is eqaul or higher from syslog priority
+// V returns information whether or not logger level is 
+// eqaul or higher from syslog priority
 func (l *GrpcLogger) V(level int) bool {
 	l.once.Do(l.init)
 	return syslog.Priority(level) >= l.Logger.GetLevel()
