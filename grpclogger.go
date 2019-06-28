@@ -62,72 +62,69 @@ func (l *GrpcLogger) Printf(format string, args ...interface{}) {
 	l.Logger.Printf(l.PrintLevel, format, args...)
 }
 
-// Info logs to INFO log. Arguments are handled in the manner of fmt.Print.
+// Info initializes and logs to info logger. All arguments are forwarded.
 func (l *GrpcLogger) Info(args ...interface{}) {
 	l.once.Do(l.init)
 	l.Logger.Info(args...)
 }
 
-// Infoln logs to INFO log. Arguments are handled in the manner of fmt.Println.
+// Infoln logs to info loggger. All arguments are forwarded to Info func
 func (l *GrpcLogger) Infoln(args ...interface{}) { l.Info(args...) }
 
-// Infof logs to INFO log. Arguments are handled in the manner of fmt.Printf.
+// Info initializes and logs to infof logger. All arguments are forwarded.
 func (l *GrpcLogger) Infof(format string, args ...interface{}) {
 	l.once.Do(l.init)
 	l.Logger.Infof(format, args...)
 }
 
-// Warning logs to WARNING log. Arguments are handled in the manner of fmt.Print.
+// Warning initializes and logs to warning logger. All arguments are forwarded. 
 func (l *GrpcLogger) Warning(args ...interface{}) {
 	l.once.Do(l.init)
 	l.Logger.Warning(args...)
 }
 
-// Warningln logs to WARNING log. Arguments are handled in the manner of fmt.Println.
+// Warningln logs to warning loggger. Arguments are forwarded to Warning func
 func (l *GrpcLogger) Warningln(args ...interface{}) { l.Warning(args...) }
 
-// Warningf logs to WARNING log. Arguments are handled in the manner of fmt.Printf.
+// Warningf initializes and logs to warning logger. All arguments are forwarded.
 func (l *GrpcLogger) Warningf(format string, args ...interface{}) {
 	l.once.Do(l.init)
 	l.Logger.Warningf(format, args...)
 }
 
-// Error logs to ERROR log. Arguments are handled in the manner of fmt.Print.
+// Error initializes and logs to error logger. All arguments are forwarded. 
 func (l *GrpcLogger) Error(args ...interface{}) {
 	l.once.Do(l.init)
 	l.Logger.Err(args...)
 }
 
-// Errorln logs to ERROR log. Arguments are handled in the manner of fmt.Println.
+// Errorln logs to error logger. Arguments are handled in the manner of fmt.Println.
 func (l *GrpcLogger) Errorln(args ...interface{}) { l.Error(args...) }
 
-// Errorf logs to ERROR log. Arguments are handled in the manner of fmt.Printf.
+// Errorf logs to error logger. All arguments are forwarded.
 func (l *GrpcLogger) Errorf(format string, args ...interface{}) {
 	l.once.Do(l.init)
 	l.Logger.Errf(format, args...)
 }
 
-// Fatal logs to ERROR log. Arguments are handled in the manner of fmt.Print.
-// This function should call os.Exit() with a non-zero exit code.
+// Fatal initializes, logs to alert logger and callse os.exit with value 1. All arguments are forwarded to logger. 
 func (l *GrpcLogger) Fatal(args ...interface{}) {
 	l.once.Do(l.init)
 	l.Logger.Alert(args...)
 	os.Exit(1)
 }
 
-// Fatalln logs to ERROR log. Arguments are handled in the manner of fmt.Println.
-// This function should call os.Exit() with a non-zero exit code.
+// Fatalln executes Fatal func and forwards all arguments.
 func (l *GrpcLogger) Fatalln(args ...interface{}) { l.Fatal(args...) }
 
-// Fatalf logs to ERROR log. Arguments are handled in the manner of fmt.Printf.
-// This function should call os.Exit() with a non-zero exit code.
+// Fatalf initializes, logs to alertf logger and callse os.exit with value 1. All arguments are forwarded to logger. 
 func (l *GrpcLogger) Fatalf(format string, args ...interface{}) {
 	l.once.Do(l.init)
 	l.Logger.Alertf(format, args...)
 	os.Exit(1)
 }
 
-// V reports whether verbosity level l is at least the requested verbose level.
+// V returns information whether or not logger level is eqaul or higher from syslog priority
 func (l *GrpcLogger) V(level int) bool {
 	l.once.Do(l.init)
 	return syslog.Priority(level) >= l.Logger.GetLevel()
