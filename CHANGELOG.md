@@ -22,3 +22,7 @@
 
 ### Added
 - Added CHANGELOG.md 
+
+## [0.0.1] - 2019-07-01
+### Changed
+- Fix grpclog level to syslog level conversion
