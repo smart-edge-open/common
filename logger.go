@@ -25,7 +25,7 @@ import (
 	"sync"
 	"time"
 
-	slog "github.com/smartedgemec/log/syslog"
+	slog "github.com/otcshare/common/log/syslog"
 )
 
 // Logger implements syslog logging funcs and can be connected to a syslog

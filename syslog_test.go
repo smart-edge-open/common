@@ -23,7 +23,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/smartedgemec/log"
+	"github.com/otcshare/common/log"
 )
 
 func TestLoggerConnectSyslogLocal(t *testing.T) { // nolint: gocyclo
@@ -61,7 +61,7 @@ func TestLoggerConnectSyslogLocal(t *testing.T) { // nolint: gocyclo
 	time.Sleep(10 * time.Millisecond) // must wait long enough for tail to seek to end of file
 
 	// Write an ERROR message (must be high enough priority for system)
-	msg := "smartedgemec syslog test"
+	msg := "otcshare/common syslog test"
 	matcher := regexp.MustCompile(": " + msg + "\\n$")
 	log.Err(msg)
 
