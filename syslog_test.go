@@ -23,7 +23,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/otcshare/common/log"
+	"github.com/otcshare/common"
 )
 
 func TestLoggerConnectSyslogLocal(t *testing.T) { // nolint: gocyclo
