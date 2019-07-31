@@ -20,7 +20,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/smartedgemec/log"
+	"github.com/otcshare/common"
 )
 
 func TestDefaultLoggerSetOutput(t *testing.T) {

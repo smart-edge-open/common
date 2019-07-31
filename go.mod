@@ -1,3 +1,3 @@
-module github.com/smartedgemec/log
+module github.com/otcshare/common
 
 go 1.12

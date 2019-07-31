@@ -20,7 +20,7 @@ import (
 	"regexp"
 	"testing"
 
-	"github.com/smartedgemec/log"
+	"github.com/otcshare/common"
 )
 
 func TestPrinterPrint(t *testing.T) {

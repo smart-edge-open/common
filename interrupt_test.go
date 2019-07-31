@@ -22,7 +22,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/smartedgemec/log"
+	"github.com/otcshare/common"
 )
 
 func TestSignalVerbosityChanges(t *testing.T) {
