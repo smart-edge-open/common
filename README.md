@@ -4,8 +4,9 @@ Common logging library with Syslog support
 
 ## Getting Started
 
-In its most basic form, the `otcshare/common/log` package can be used by calling
-package level print funcs, i.e. `Debug(f|ln)`, `Info(f|ln)`, `Err(f|ln)`, etc.
+In its most basic form, the log package from `otcshare/common` repository can be
+used by calling package level print funcs, i.e. `Debug(f|ln)`, `Info(f|ln)`, 
+`Err(f|ln)`, etc.
 
 By default, all logs will be printed to stderr and a remote syslog service, if
 connected. To change the default print output destination, use `SetOutput`. For
