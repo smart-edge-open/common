@@ -22,7 +22,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/otcshare/common"
+	"github.com/open-ness/common"
 )
 
 func TestSignalVerbosityChanges(t *testing.T) {

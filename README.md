@@ -4,7 +4,7 @@ Common logging library with Syslog support
 
 ## Getting Started
 
-In its most basic form, the log package from `otcshare/common` repository can be
+In its most basic form, the log package from `open-ness/common` repository can be
 used by calling package level print funcs, i.e. `Debug(f|ln)`, `Info(f|ln)`, 
 `Err(f|ln)`, etc.
 
@@ -37,7 +37,7 @@ larger monolith that tags itself. This may look like
 ```
 package api
 
-import "github.com/otcshare/common"
+import "github.com/open-ness/common"
 
 var log = log.DefaultLogger.WithField("component", "api")
 

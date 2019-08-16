@@ -20,7 +20,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/otcshare/common"
+	"github.com/open-ness/common"
 )
 
 func TestDefaultLoggerSetOutput(t *testing.T) {

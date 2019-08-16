@@ -20,7 +20,7 @@ import (
 	"regexp"
 	"testing"
 
-	"github.com/otcshare/common"
+	"github.com/open-ness/common"
 )
 
 func TestPrinterPrint(t *testing.T) {
