@@ -1,3 +1,3 @@
-module github.com/otcshare/common
+module github.com/open-ness/common
 
 go 1.12
