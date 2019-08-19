@@ -20,7 +20,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/otcshare/common"
+	"github.com/otcshare/common/log"
 )
 
 func TestLoggerSetOutput(t *testing.T) {
