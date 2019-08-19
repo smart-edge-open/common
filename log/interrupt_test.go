@@ -22,7 +22,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/otcshare/common"
+	"github.com/otcshare/common/log"
 )
 
 func TestSignalVerbosityChanges(t *testing.T) {
