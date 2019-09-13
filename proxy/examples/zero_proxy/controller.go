@@ -33,16 +33,48 @@ import (
 	"github.com/otcshare/common/proxy/progutil"
 )
 
+var lastCallSucceeded = false
+
+func dialAppliance(id string, ctx context.Context, pl *progutil.PrefaceListener) {
+	var cli pb.GoodbyeServiceClient
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(1 * time.Second):
+			if cli == nil {
+				log.Print(id + ": Dial()'ling appliance")
+				cc, err := grpc.Dial("", grpc.WithBlock(),
+					grpc.WithInsecure(), grpc.WithDialer(pl.DialEva))
+				if err != nil {
+					log.Printf(id+": [cloud] error dialing appliance: %v", err)
+					continue
+				}
+				cli = pb.NewGoodbyeServiceClient(cc)
+				log.Print(id + ": Dial()'ling success")
+			}
+			log.Print(id + ": Sending SayGoodbye RPC")
+			goodbyeResp, err := cli.SayGoodbye(ctx, &wrappers.StringValue{Value: id + " Cloud"})
+			if err != nil {
+				log.Printf(id+": [cloud] error making RPC to appliance: %v", err)
+				continue
+			}
+			log.Printf(id+": [cloud] got response from appliance: %s", goodbyeResp.GetValue())
+			lastCallSucceeded = true
+		}
+	}
+}
+
 func main() {
 	fmt.Println("[cloud] Running Cloud Controller")
 
-	// Listen on an ephemeral port
-	lis, err := net.Listen("tcp", ":0")
+	// Listen
+	lis, err := net.Listen("tcp", ":3333")
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer lis.Close()
-	pl := &progutil.PrefaceListener{Listener: lis}
+	pl := progutil.NewPrefaceListener(lis)
 
 	// Print ephemeral port so example app can discover it by parsing logs
 	_, port, _ := net.SplitHostPort(lis.Addr().String())
@@ -55,34 +87,10 @@ func main() {
 	// Dial appliance and call every second
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	lastCallSucceeded := false
-	go func() {
-		var cli pb.GoodbyeServiceClient
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(time.Second):
-				if cli == nil {
-					cc, err := grpc.Dial("", grpc.WithBlock(),
-						grpc.WithInsecure(), grpc.WithDialer(pl.Dial))
-					if err != nil {
-						log.Printf("[cloud] error dialing appliance: %v", err)
-						continue
-					}
-					cli = pb.NewGoodbyeServiceClient(cc)
-				}
-				goodbyeResp, err := cli.SayGoodbye(ctx, &wrappers.StringValue{Value: "Cloud"})
-				if err != nil {
-					log.Printf("[cloud] error making RPC to appliance: %v", err)
-					continue
-				}
-				log.Printf("[cloud] got response from appliance: %s", goodbyeResp.GetValue())
-				lastCallSucceeded = true
 
-			}
-		}
-	}()
+	_ = ctx
+	go dialAppliance("goroutine1", ctx, pl)
+	go dialAppliance("goroutine2", ctx, pl) // Attempt multiple parallel calls
 
 	// Shutdown on interrupt
 	intC := make(chan os.Signal, 1)
@@ -96,6 +104,7 @@ func main() {
 	// Run gRPC server
 	srv.Serve(pl)
 	if !lastCallSucceeded {
+		fmt.Println("Controller: exiting with error")
 		os.Exit(1)
 	}
 }

@@ -15,6 +15,7 @@
 package examples_test
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -30,7 +31,6 @@ func TestZeroProxyExample(t *testing.T) {
 	cmd := exec.Command("./zero_proxy")
 	cmd.Dir = "./zero_proxy"
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	done := make(chan struct{})
 	defer close(done)
 	if err := cmd.Start(); err != nil {
@@ -42,9 +42,10 @@ func TestZeroProxyExample(t *testing.T) {
 		select {
 		case <-done:
 		case <-time.After(time.Duration(sec) * time.Second):
+			fmt.Printf("Time is up - killing the main process\n")
 			syscall.Kill(pid, syscall.SIGINT)
 		}
-	}(5, -cmd.Process.Pid)
+	}(9, cmd.Process.Pid)
 
 	// Check exit code
 	cmd.Wait()

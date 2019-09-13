@@ -17,21 +17,21 @@ package progutil
 import (
 	"bytes"
 	"context"
-	"crypto/tls"
 	"errors"
 	"fmt"
+	logger "github.com/otcshare/common/log"
 	"io"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
-
-	"golang.org/x/net/http2"
 )
 
 var errNoDeadlineSupport = errors.New("listener does not support accept deadline setting")
+var log = logger.DefaultLogger.WithField("proxy", nil)
 
 // PrefaceListener accepts connections and separates them based on whether they
-// begin with a server or client HTTP/2 preface. It is assumed that
+// begin with a client HTTP/2 preface or our custom ID. It is assumed that
 //
 // 1. No connections are made without a preface being sent within a reasonable
 // amount of time.
@@ -40,17 +40,41 @@ type PrefaceListener struct {
 	// Listener is the underlying connection acceptor. It cannot be nil.
 	net.Listener
 
-	// PrefaceReadTimeout is the amount of time to wait on receiving an HTTP/2
-	// client or server preface before closing and dropping the connection. If
-	// not set a default of 200ms will be used.
-	PrefaceReadTimeout time.Duration
-
-	ch chan net.Conn
-
-	init, cleanup sync.Once
+	chEva chan net.Conn
+	chEla chan net.Conn
 }
 
 func (l *PrefaceListener) Addr() net.Addr { return l.Listener.Addr() }
+
+// Sends the connection into the channel
+func storeConn(conn net.Conn, ch chan net.Conn) {
+	select {
+	// empty channel of previous conn, if any
+	case discard := <-ch:
+		discard.Close()
+	default:
+	}
+
+	select {
+	// store conn unless an equally recent conn already got stored
+	case ch <- conn:
+	default:
+		conn.Close()
+	}
+}
+
+func NewPrefaceListener(l net.Listener) *PrefaceListener {
+	pl := new(PrefaceListener)
+
+	pl.Listener = l
+
+	// Init our channels
+	pl.chEva = make(chan net.Conn, 1)
+	pl.chEla = make(chan net.Conn, 1)
+
+	return pl
+}
+
 func (l *PrefaceListener) Accept() (net.Conn, error) {
 	conn, err := l.Listener.Accept()
 	if err != nil {
@@ -58,53 +82,39 @@ func (l *PrefaceListener) Accept() (net.Conn, error) {
 	}
 
 	// read preface
-	var (
-		r        = io.Reader(conn)
-		nextByte = make([]byte, 1)
-		isClient = true
-		consumed []byte
-	)
-	for i := range http2.ClientPreface {
-		_, err := conn.Read(nextByte)
-		if err == nil {
-			consumed = append(consumed, nextByte[0])
-		}
-		if err != nil || nextByte[0] != http2.ClientPreface[i] {
-			// Must be a server pushing a SETTINGS frame
-			isClient = false
-			break
-		}
+	packet := make([]byte, 3)
+	log.Debugf("Connection from %v, awaiting 1st packet", conn.RemoteAddr())
+	n, err := conn.Read(packet)
+	if err != nil {
+		log.Debugf("Failed to read 1st packet: %s", err)
 	}
+	log.Debugf("First packet received, %d/%d bytes: %q", n, len(packet), string(packet[:n]))
+	packet = packet[:n]
 
-	// reconstruct conn
-	conn = readerConn{conn, io.MultiReader(io.MultiReader(bytes.NewBuffer(consumed), r), conn)}
+	// If the conn is from a server, store it for later use
+	if bytes.Equal(packet, []byte("EVA")) {
+		log.Debugf("we have EVA proxy callback")
+		storeConn(conn, l.chEva)
+	} else if bytes.Equal(packet, []byte("ELA")) {
+		log.Debugf("we have ELA proxy callback")
+		storeConn(conn, l.chEla)
+	} else {
+		// If the conn is from a client, return immediately
+		log.Debugf("we have a client connection")
+		// reconstruct data
+		conn = readerConn{conn, io.MultiReader(io.MultiReader(
+			bytes.NewBuffer(packet), io.Reader(conn)), conn)}
 
-	// If the conn is from a client, return immediately
-	if isClient {
 		return conn, nil
 	}
 
-	// If the conn is from a server, store it for later use
-	l.init.Do(func() { l.ch = make(chan net.Conn, 1) })
-	select {
-	// empty channel of previous conn, if any
-	case discard := <-l.ch:
-		discard.Close()
-	default:
-	}
-	select {
-	// store conn unless an equally recent conn already got stored
-	case l.ch <- conn:
-	default:
-		conn.Close()
-	}
-	return l.Accept()
+	return l.Accept() // nothing we can return, loop
 }
 func (l *PrefaceListener) Close() error {
-	l.init.Do(func() { l.ch = make(chan net.Conn, 1) })
-	err := l.Listener.Close()
-	l.cleanup.Do(func() { close(l.ch) })
-	return err
+	close(l.chEva)
+	close(l.chEla)
+
+	return l.Listener.Close()
 }
 func (l *PrefaceListener) SetDeadline(deadline time.Time) error {
 	lis, ok := l.Listener.(interface{ SetDeadline(time.Time) error })
@@ -113,10 +123,10 @@ func (l *PrefaceListener) SetDeadline(deadline time.Time) error {
 	}
 	return lis.SetDeadline(deadline)
 }
-func (l *PrefaceListener) Dial(_ string, dur time.Duration) (net.Conn, error) {
-	l.init.Do(func() { l.ch = make(chan net.Conn, 1) })
+
+func dialCommon(ch chan net.Conn, dur time.Duration) (net.Conn, error) {
 	select {
-	case conn := <-l.ch:
+	case conn := <-ch:
 		if conn == nil {
 			return nil, &net.OpError{Op: "dial", Err: fmt.Errorf("dialer closing")}
 		}
@@ -124,6 +134,12 @@ func (l *PrefaceListener) Dial(_ string, dur time.Duration) (net.Conn, error) {
 	case <-time.After(dur):
 		return nil, context.DeadlineExceeded
 	}
+}
+func (l *PrefaceListener) DialEva(_ string, dur time.Duration) (net.Conn, error) {
+	return dialCommon(l.chEva, dur)
+}
+func (l *PrefaceListener) DialEla(_ string, dur time.Duration) (net.Conn, error) {
+	return dialCommon(l.chEla, dur)
 }
 
 type readerConn struct {
@@ -134,228 +150,116 @@ type readerConn struct {
 func (conn readerConn) Read(p []byte) (int, error) { return conn.Reader.Read(p) }
 
 type DialListener struct {
-	LocalAddr  net.Addr
 	RemoteAddr net.Addr
-	TLS        *tls.Config
+	Name       string
 
-	// TODO: combine a local listener
-	// Inner net.Listener
-
-	connMu sync.Mutex
-	conn   net.Conn
-
-	closeMu sync.Mutex
-	closing chan struct{}
-	redialC chan struct{}
+	// Connection management variables
+	established int32 // awaiting connections with no data yet
+	active      int32 // connections that had some bytes flowing
 }
 
 // Accept waits for and returns the next connection to the listener.
 func (lis *DialListener) Accept() (net.Conn, error) {
-	// Initialize channels
-	lis.closeMu.Lock()
-	if lis.closing == nil {
-		lis.closing = make(chan struct{})
-		lis.redialC = make(chan struct{}, 1)
-		lis.redialC <- struct{}{}
+	if lis.established > lis.active {
+		// We have at least 1 free connection, nothing to do
+		time.Sleep(time.Second)
+		return nil, tempErr{}
 	}
-	lis.closeMu.Unlock()
-
-	select {
-	case <-lis.closing:
-		return nil, io.EOF
-	default:
-		// Nest so that if both channels are loaded close will always have
-		// precedence
-		select {
-		case <-lis.closing:
-			return nil, io.EOF
-		case <-lis.redialC:
-			/*
-				log.Printf("Redialing from [%s] to [%s] (TLS: %v)",
-					lis.LocalAddr, lis.RemoteAddr, lis.TLS != nil)
-			*/
-		}
+	if lis.established > 0 {
+		// Do not log when controller is completely down.
+		// So we log when all (non-zero) connections we have are in use
+		log.Debugf("%v DialListener: ConnPool: %v/%v",
+			lis.Name, lis.active, lis.established)
+		log.Debugf("%v DialListener: dialling %v", lis.Name, lis.RemoteAddr)
 	}
 
-	// Dial to network
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go func() {
-		select {
-		case <-ctx.Done():
-		case <-lis.closing:
-			cancel()
-		}
-	}()
-	conn, err := (&net.Dialer{LocalAddr: lis.LocalAddr}).DialContext(
-		context.TODO(), // for future use with SetDeadline
+	// Last connection in use (or no connections), make a new one
+	conn, err := net.Dial(
 		lis.RemoteAddr.Network(), lis.RemoteAddr.String())
 	if err != nil {
-		lis.redialC <- struct{}{}
-		// Ensure error is always temporary
-		return nil, tempErr{err}
-	}
-	if lis.TLS != nil {
-		conn = tls.Client(conn, lis.TLS)
+		// Controller down, keep trying to dial every 1 second
+		time.Sleep(time.Second)
+		return nil, tempErr{}
 	}
 
-	// Store conn in memory
-	lis.connMu.Lock()
-	defer lis.connMu.Unlock()
-	lis.conn = conn
-	return &notifyOnNetErr{Conn: conn, C: lis.redialC}, nil
+	// Send our ID
+	conn.Write([]byte(lis.Name))
+	atomic.AddInt32(&lis.established, 1)
+
+	log.Debugf("%v DialListener connection established: ConnPool: %v/%v",
+		lis.Name, lis.active, lis.established)
+
+	return &notifyOnNetErr{Conn: conn, L: lis}, nil
 }
 
 // Close closes the listener.
 // Any blocked Accept operations will be unblocked and return errors.
 func (lis *DialListener) Close() (err error) {
-	lis.closeMu.Lock()
-	defer lis.closeMu.Unlock()
-	select {
-	case <-lis.closing:
-		return
-	default:
-		if lis.closing != nil {
-			close(lis.closing)
-		}
-	}
 
-	lis.connMu.Lock()
-	defer lis.connMu.Unlock()
-	if lis.conn != nil {
-		lis.conn, err = nil, lis.conn.Close()
-	}
 	return
 }
 
 // Addr returns the listener's network address.
 func (lis *DialListener) Addr() net.Addr {
-	lis.connMu.Lock()
-	defer lis.connMu.Unlock()
-
-	if lis.conn == nil {
-		return nil
-	}
-	return lis.conn.LocalAddr()
+	return nil // TODO
 }
 
 type notifyOnNetErr struct {
 	net.Conn
-	C chan<- struct{}
+	L      *DialListener
+	active bool
 
-	once sync.Once
+	onceErr, onceRead sync.Once
 }
 
 func (conn *notifyOnNetErr) Read(b []byte) (int, error) {
 	n, err := conn.Conn.Read(b)
+
 	if e, ok := err.(net.Error); (err != nil && !ok) || (ok && !e.Temporary()) {
-		conn.once.Do(func() { conn.C <- struct{}{} })
+		conn.onceErr.Do(func() {
+			log.Debugf("Read error happened with one of the connections: %v", err)
+			atomic.AddInt32(&conn.L.established, -1)
+			if conn.active {
+				atomic.AddInt32(&conn.L.active, -1)
+			}
+		})
+		return n, err
 	}
+
+	if n == 0 {
+		return n, err
+	}
+	conn.onceRead.Do(func() {
+		conn.active = true
+		atomic.AddInt32(&conn.L.active, 1)
+	})
+
 	return n, err
 }
 
 func (conn *notifyOnNetErr) Write(p []byte) (int, error) {
 	n, err := conn.Conn.Write(p)
 	if e, ok := err.(net.Error); (err != nil && !ok) || (ok && !e.Temporary()) {
-		conn.once.Do(func() { conn.C <- struct{}{} })
+		conn.onceErr.Do(func() {
+			log.Debugf("Write error happened with one of the connections: %v", err)
+			atomic.AddInt32(&conn.L.established, -1)
+			if conn.active {
+				atomic.AddInt32(&conn.L.active, -1)
+			}
+		})
 	}
 	return n, err
 }
 
-// SplitTLSListener creates a listener that can split out certain incoming
-// connections from an inner listener to child listeners it creates.
-type SplitTLSListener struct {
-	net.Listener
-
-	matchersMu sync.Mutex
-	matchers   []func(tls.ConnectionState) chan<- net.Conn
-}
-
-// DropUnsplit throws out all connections that aren't split to a child
-// listener. This func should be run in a goroutine.
-func (l *SplitTLSListener) DropUnsplit() {
-	conn, err := l.Accept()
-	for {
-		if err != nil {
-			return
+func (conn *notifyOnNetErr) Close() error {
+	conn.onceErr.Do(func() {
+		atomic.AddInt32(&conn.L.established, -1)
+		if conn.active {
+			atomic.AddInt32(&conn.L.active, -1)
 		}
-		/*
-			if tlsConn, ok := conn.(*tls.Conn); ok {
-				log.Printf("Dropping conn: %+v", tlsConn.ConnectionState())
-			}
-		*/
-		conn.Close()
-		conn, err = l.Accept()
-	}
-}
-
-// Accept waits for and returns the next connection to the listener. All conns
-// that can go to a child listener are silently sent and nothing is returned
-// from this Accept func.
-//
-// WARNING: This is the main accept loop. If it is not called continuously
-// until an error condition, then child listeners may not Accept new
-// connections. If all expected conns will be sent to a child listener, then
-// call `go lis.DropUnsplit()`.
-func (l *SplitTLSListener) Accept() (net.Conn, error) {
-CatchAllListener:
-	for {
-		conn, err := l.Listener.Accept()
-		if err != nil {
-			return nil, err
-		}
-		tlsConn, isTLS := conn.(*tls.Conn)
-		if !isTLS {
-			return conn, nil
-		}
-		if err := tlsConn.Handshake(); err != nil {
-			tlsConn.Close()
-			continue CatchAllListener
-		}
-		state := tlsConn.ConnectionState()
-
-		l.matchersMu.Lock()
-		for _, matcher := range l.matchers {
-			found := matcher(state)
-			if found != nil {
-				l.matchersMu.Unlock()
-				select {
-				case found <- conn:
-				default:
-				}
-				continue CatchAllListener
-			}
-		}
-		l.matchersMu.Unlock()
-
-		return conn, nil
-	}
-}
-
-// SplitSNI creates a child listener that only includes connections that dialed
-// to a particular TLS SNI. This is only useful for configs
-func (l *SplitTLSListener) SplitSNI(sni string) net.Listener {
-	ch := make(chan net.Conn, 100)
-	l.matchersMu.Lock()
-	l.matchers = append(l.matchers, func(cs tls.ConnectionState) chan<- net.Conn {
-		if cs.ServerName == sni {
-			return ch
-		}
-		return nil
 	})
-	l.matchersMu.Unlock()
-	return chanListener{l.Listener, ch}
-}
 
-type chanListener struct {
-	net.Listener
-	ch <-chan net.Conn
-}
-
-// Accept waits for and returns the next connection to the listener.
-func (l chanListener) Accept() (net.Conn, error) {
-	// TODO: handle listener being closed or timed out
-	return <-l.ch, nil
+	return conn.Conn.Close()
 }
 
 type tempErr struct {

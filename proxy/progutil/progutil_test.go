@@ -17,15 +17,8 @@ package progutil_test
 import (
 	"bytes"
 	"context"
-	"crypto"
-	"crypto/ecdsa"
-	"crypto/elliptic"
-	"crypto/rand"
-	"crypto/tls"
-	"crypto/x509"
-	"crypto/x509/pkix"
 	"fmt"
-	"math/big"
+	"io/ioutil"
 	"net"
 	"net/http"
 	"testing"
@@ -44,7 +37,7 @@ func TestPrefaceListenerAddr(t *testing.T) {
 	}
 	defer lis.Close()
 
-	pl := &progutil.PrefaceListener{Listener: lis}
+	pl := progutil.NewPrefaceListener(lis)
 	if pl.Addr().String() != lis.Addr().String() {
 		t.Fatal("address should match inner listener")
 	}
@@ -57,7 +50,7 @@ func TestPrefaceListenerAccept(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer lis.Close()
-	pl := &progutil.PrefaceListener{Listener: lis}
+	pl := progutil.NewPrefaceListener(lis)
 
 	// Start dialing
 	dialErrC := make(chan error, 1)
@@ -89,8 +82,8 @@ func TestPrefaceListenerAccept(t *testing.T) {
 			readErrC <- err
 			return
 		}
-		b := make([]byte, len(http2.ClientPreface))
-		if _, err := conn.Read(b); err != nil {
+		b, err := ioutil.ReadAll(conn)
+		if err != nil {
 			readErrC <- fmt.Errorf("error reading client preface: %v", err)
 			return
 		}
@@ -117,7 +110,7 @@ func TestPrefaceListenerDial(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer lis.Close()
-	pl := &progutil.PrefaceListener{Listener: lis}
+	pl := progutil.NewPrefaceListener(lis)
 
 	// Start dialing
 	dialErrC := make(chan error, 1)
@@ -132,6 +125,9 @@ func TestPrefaceListenerDial(t *testing.T) {
 		}
 		defer conn.Close()
 
+		if _, err := conn.Write([]byte("EVA")); err != nil {
+			dialErrC <- fmt.Errorf("error writing EVA preface: %v", err)
+		}
 		if err := http2.NewFramer(conn, nil).WriteSettings(); err != nil {
 			dialErrC <- fmt.Errorf("error writing server preface: %v", err)
 			return
@@ -143,7 +139,7 @@ func TestPrefaceListenerDial(t *testing.T) {
 	go func() {
 		defer close(readErrC)
 
-		conn, err := pl.Dial("", time.Second)
+		conn, err := pl.DialEva("", time.Second)
 		if err != nil {
 			readErrC <- err
 			return
@@ -214,91 +210,4 @@ func TestDialListenerTCP(t *testing.T) {
 	if http.StatusNotFound != resp.StatusCode {
 		t.Fatalf("expected HTTP status %d, got %d", http.StatusNotFound, resp.StatusCode)
 	}
-}
-
-func TestDialListenerTLS(t *testing.T) {
-	// Generate self-signed CA
-	root, key, err := genRootCA()
-	if err != nil {
-		t.Fatal(err)
-	}
-	conf := &tls.Config{Certificates: []tls.Certificate{
-		{Certificate: [][]byte{root.Raw}, PrivateKey: key},
-	}}
-
-	// Listen on an ephemeral port
-	lis, err := tls.Listen("tcp", "localhost:0", conf)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer lis.Close()
-
-	// Connect to test server
-	caPool := x509.NewCertPool()
-	caPool.AddCert(root)
-	clientConf := &tls.Config{ServerName: root.Subject.CommonName, RootCAs: caPool}
-	dlis := &progutil.DialListener{RemoteAddr: lis.Addr(), TLS: clientConf}
-	defer dlis.Close()
-
-	// Serve HTTP
-	go func() { _ = http.Serve(dlis, http.NotFoundHandler()) }()
-
-	// Accept a conn to use for an HTTP client
-	conn, err := lis.Accept()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.Close()
-
-	// Make an HTTP request
-	cli := http.Client{Transport: &http.Transport{
-		TLSClientConfig: clientConf,
-		DialContext: func(context.Context, string, string) (net.Conn, error) {
-			return conn, nil
-		},
-	}}
-	req, err := http.NewRequest(http.MethodGet, "http://anything/", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	resp, err := cli.Do(req.WithContext(ctx))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if http.StatusNotFound != resp.StatusCode {
-		t.Fatalf("expected HTTP status %d, got %d", http.StatusNotFound, resp.StatusCode)
-	}
-}
-
-func genRootCA() (*x509.Certificate, crypto.PrivateKey, error) {
-	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		return nil, nil, err
-	}
-	todayY, todayM, todayD := time.Now().Date()
-	today := time.Time{}.AddDate(todayY, int(todayM), todayD).AddDate(-1, -1, -1)
-	tomorrow := today.AddDate(0, 0, 1)
-	tmpl := &x509.Certificate{
-		SerialNumber:          big.NewInt(0),
-		Subject:               pkix.Name{CommonName: "Root"},
-		IsCA:                  true,
-		BasicConstraintsValid: true,
-		NotBefore:             today,
-		NotAfter:              tomorrow,
-	}
-	root, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, key.Public(), key)
-	if err != nil {
-		return nil, nil, err
-	}
-	cert, err := x509.ParseCertificate(root)
-	if err != nil {
-		return nil, nil, err
-	}
-	return cert, key, nil
-}
-
-func TestDialListenerUnix(t *testing.T) {
-	t.Skip("TODO")
 }

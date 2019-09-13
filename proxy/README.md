@@ -7,20 +7,9 @@ or a gateway. A future version in development does. The current implementation
 only includes a set of utils that will be included and maintained in the full
 version.
 
-The benefit of these utils are that they allow for setting up bidirectional
-HTTP/2 streams - meaning with the client and server roles in each orientation -
-across a NAT boundary. Normally this would be impossible if the server does not
-have a way to dial to the client, so the standard HTTP/2 solution would be to
-use a PUSH_PROMISE. However, gRPC does not support this, and instead the
-supported solution is to use bidirectional streams. Bidirectional streams are
-not always ideal, because they do not have the same simplicity and features of
-individual unary RPCs, such as timeouts and errors that don't affect
-simultaneous RPCs (any error would close the bidi stream and interrupt
-concurrent RPCs).
-
-The relationship between the sides is 1-to-1. In other words, it is nearly
-equivalent to a proxy that always chooses one destination and a gateway/reverse
-proxy that also always chooses the same backend service.
+Current implementation pre-opens a tcp connection from the side behind the NAT
+to the server on the internet. This connection is then used to make API calls
+in the reverse direction (from internet to the NAT).
 
 ## Usage
 

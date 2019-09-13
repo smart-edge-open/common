@@ -27,6 +27,7 @@ import (
 	"regexp"
 	"sync"
 	"syscall"
+	"time"
 )
 
 func main() {
@@ -54,7 +55,7 @@ func main() {
 	log.Printf("Starting Controller")
 	cc := exec.Command("go", "run", "./controller.go")
 	cc.Stdout = addrParser{w: os.Stdout, c: portC}
-	cc.Stderr = io.MultiWriter(os.Stderr, ctrlSuccess)
+	cc.Stderr = ctrlSuccess
 	cc.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := cc.Start(); err != nil {
 		log.Fatalf("error starting cloud controller: %v", err)
@@ -86,13 +87,14 @@ func main() {
 	log.Printf("Starting Appliance")
 	ap := exec.Command("go", "run", "./appliance.go", "-port", port)
 	ap.Stdout = os.Stdout
-	ap.Stderr = io.MultiWriter(os.Stderr, applSuccess)
+	ap.Stderr = applSuccess
 	ap.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := ap.Start(); err != nil {
 		log.Fatalf("error starting edge appliance: %v", err)
 	}
 	go func() {
 		<-exiting
+		fmt.Println("Main process: Caught the exit signal")
 		// Kill the process group
 		syscall.Kill(-ap.Process.Pid, syscall.SIGINT)
 	}()
@@ -116,24 +118,27 @@ func main() {
 	// Initiate shutdown and wait for processes to finish
 	wg.Wait()
 
+	// Allow children to finish writes to stdout
+	time.Sleep(time.Second)
 	// Enumerate errors from process shudowns
 	close(errC)
 	exitCode := 0
 	for err := range errC {
 		exitCode = 1
-		log.Println(err)
+		log.Printf("Error channel: %v\n", err)
 	}
 
 	// Check that process stderrs end with successful RPC
 	if !ctrlSuccess.Success() {
-		exitCode = 1
+		exitCode = (exitCode | 2)
 		log.Printf("controller did not succeed on final RPC to appliance")
 	}
 	if !applSuccess.Success() {
-		exitCode = 1
+		exitCode = (exitCode | 4)
 		log.Printf("appliance did not succeed on final RPC to controller")
 	}
 
+	fmt.Printf("Exiting with code: %v\n", exitCode)
 	os.Exit(exitCode)
 }
 
@@ -164,8 +169,6 @@ func (w addrParser) Write(p []byte) (n int, err error) {
 // helper type to check that RPC successes were logged
 type rpcSuccessChecker struct {
 	lastLineWasSuccess bool
-
-	buf []byte
 }
 
 func (r *rpcSuccessChecker) Success() bool { return r.lastLineWasSuccess }
@@ -173,8 +176,12 @@ func (r *rpcSuccessChecker) Success() bool { return r.lastLineWasSuccess }
 var reSuccessRPC = regexp.MustCompile(`got response from`)
 
 func (r *rpcSuccessChecker) Write(p []byte) (int, error) {
-	r.buf = append(r.buf, bytes.TrimSpace(p)...)
-	r.buf = r.buf[bytes.LastIndexByte(r.buf, '\n')+1:]
-	r.lastLineWasSuccess = reSuccessRPC.Match(r.buf)
+	r.lastLineWasSuccess = reSuccessRPC.Match(p)
+	if r.lastLineWasSuccess {
+		fmt.Printf("<OK> %v", string(p))
+	} else {
+		fmt.Printf("<NA> %v", string(p))
+	}
+
 	return len(p), nil
 }

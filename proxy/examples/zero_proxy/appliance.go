@@ -35,6 +35,31 @@ import (
 	"google.golang.org/grpc"
 )
 
+func dialController(ctx context.Context, addr string) {
+	var cli pb.HelloServiceClient
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(1 * time.Second):
+			if cli == nil {
+				cc, err := grpc.Dial(addr, grpc.WithBlock(), grpc.WithInsecure())
+				if err != nil {
+					log.Printf("[edge] error dialing controller: %v", err)
+					continue
+				}
+				cli = pb.NewHelloServiceClient(cc)
+			}
+			helloResp, err := cli.SayHello(ctx, &wrappers.StringValue{Value: "Edge"})
+			if err != nil {
+				log.Printf("[edge] error making RPC to controller: %v", err)
+				continue
+			}
+			log.Printf("[edge] got response from controller: %s", helloResp.GetValue())
+		}
+	}
+}
+
 func main() {
 	var port = flag.String("port", "", "port to connect to cloud proxy on")
 
@@ -59,55 +84,27 @@ func main() {
 	// Dial controller and call every second
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	lastCallSucceeded := false
-	go func() {
-		var cli pb.HelloServiceClient
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(time.Second):
-				if cli == nil {
-					cc, err := grpc.Dial("", grpc.WithBlock(), grpc.WithInsecure(),
-						grpc.WithDialer(func(_ string, dur time.Duration) (net.Conn, error) {
-							ctx, cancel := context.WithTimeout(ctx, dur)
-							defer cancel()
-							return (&net.Dialer{}).DialContext(ctx, cloudAddr.Network(), cloudAddr.String())
-						}))
-					if err != nil {
-						log.Printf("[edge] error dialing controller: %v", err)
-						continue
-					}
-					cli = pb.NewHelloServiceClient(cc)
-				}
-				helloResp, err := cli.SayHello(ctx, &wrappers.StringValue{Value: "Edge"})
-				if err != nil {
-					log.Printf("[edge] error making RPC to controller: %v", err)
-					continue
-				}
-				log.Printf("[edge] got response from controller: %s", helloResp.GetValue())
-				lastCallSucceeded = true
-
-			}
-		}
-	}()
+	_ = ctx
+	go dialController(ctx, cloudAddr.String())
 
 	// Shutdown on interrupt
 	intC := make(chan os.Signal, 1)
 	signal.Notify(intC, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		<-intC
+		go func() {
+			time.Sleep(3 * time.Second)
+			log.Printf("Shutdown timeout: forcibly terminating the appliance")
+			os.Exit(2)
+		}()
 		cancel()
 		srv.GracefulStop()
 	}()
 
 	// Run gRPC server
-	lis := &progutil.DialListener{RemoteAddr: cloudAddr}
+	lis := &progutil.DialListener{RemoteAddr: cloudAddr, Name: "EVA"}
 	defer lis.Close()
 	srv.Serve(lis)
-	if !lastCallSucceeded {
-		os.Exit(1)
-	}
 }
 
 // Implements the GoodbyeService
