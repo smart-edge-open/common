@@ -30,6 +30,11 @@ import (
 var errNoDeadlineSupport = errors.New("listener does not support accept deadline setting")
 var log = logger.DefaultLogger.WithField("proxy", nil)
 
+type applianceChans struct {
+	eva chan net.Conn
+	ela chan net.Conn
+}
+
 // PrefaceListener accepts connections and separates them based on whether they
 // begin with a client HTTP/2 preface or our custom ID. It is assumed that
 //
@@ -40,14 +45,32 @@ type PrefaceListener struct {
 	// Listener is the underlying connection acceptor. It cannot be nil.
 	net.Listener
 
-	chEva chan net.Conn
-	chEla chan net.Conn
+	// maps the stringized ip address of the appliance into channels
+	// holding the Ela and Eva agent connections
+	ch map[string]applianceChans
 }
 
-func (l *PrefaceListener) Addr() net.Addr { return l.Listener.Addr() }
-
 // Sends the connection into the channel
-func storeConn(conn net.Conn, ch chan net.Conn) {
+func (l *PrefaceListener) storeConn(conn net.Conn, agent string) {
+	addr, _, _ := net.SplitHostPort(conn.RemoteAddr().String())
+	log.Debugf("we have %v proxy callback from %v", agent, addr)
+
+	apc, ok := l.ch[addr]
+	if !ok {
+		log.Errf("Can't store conn from non-registered %v", addr)
+		return
+	}
+	var ch chan net.Conn
+	switch agent {
+	case "EVA":
+		ch = apc.eva
+	case "ELA":
+		ch = apc.ela
+	default:
+		log.Errf("Agent %v not supported", agent)
+		return
+	}
+
 	select {
 	// empty channel of previous conn, if any
 	case discard := <-ch:
@@ -67,12 +90,17 @@ func NewPrefaceListener(l net.Listener) *PrefaceListener {
 	pl := new(PrefaceListener)
 
 	pl.Listener = l
-
-	// Init our channels
-	pl.chEva = make(chan net.Conn, 1)
-	pl.chEla = make(chan net.Conn, 1)
+	pl.ch = make(map[string]applianceChans)
 
 	return pl
+}
+
+func (l *PrefaceListener) RegisterHost(addr string) {
+	l.ch[addr] = applianceChans{
+		eva: make(chan net.Conn, 1),
+		ela: make(chan net.Conn, 1),
+	}
+	log.Infof("Registered host %v for proxy connections", addr)
 }
 
 func (l *PrefaceListener) Accept() (net.Conn, error) {
@@ -93,11 +121,9 @@ func (l *PrefaceListener) Accept() (net.Conn, error) {
 
 	// If the conn is from a server, store it for later use
 	if bytes.Equal(packet, []byte("EVA")) {
-		log.Debugf("we have EVA proxy callback")
-		storeConn(conn, l.chEva)
+		l.storeConn(conn, string(packet))
 	} else if bytes.Equal(packet, []byte("ELA")) {
-		log.Debugf("we have ELA proxy callback")
-		storeConn(conn, l.chEla)
+		l.storeConn(conn, string(packet))
 	} else {
 		// If the conn is from a client, return immediately
 		log.Debugf("we have a client connection")
@@ -108,14 +134,9 @@ func (l *PrefaceListener) Accept() (net.Conn, error) {
 		return conn, nil
 	}
 
-	return l.Accept() // nothing we can return, loop
+	return nil, tempErr{} // nothing we can return, have caller retry
 }
-func (l *PrefaceListener) Close() error {
-	close(l.chEva)
-	close(l.chEla)
 
-	return l.Listener.Close()
-}
 func (l *PrefaceListener) SetDeadline(deadline time.Time) error {
 	lis, ok := l.Listener.(interface{ SetDeadline(time.Time) error })
 	if !ok {
@@ -135,11 +156,19 @@ func dialCommon(ch chan net.Conn, dur time.Duration) (net.Conn, error) {
 		return nil, context.DeadlineExceeded
 	}
 }
-func (l *PrefaceListener) DialEva(_ string, dur time.Duration) (net.Conn, error) {
-	return dialCommon(l.chEva, dur)
+func (l *PrefaceListener) DialEva(addr string, dur time.Duration) (net.Conn, error) {
+	apc, ok := l.ch[addr]
+	if !ok {
+		return nil, fmt.Errorf("'%v' not registered in proxy", addr)
+	}
+	return dialCommon(apc.eva, dur)
 }
-func (l *PrefaceListener) DialEla(_ string, dur time.Duration) (net.Conn, error) {
-	return dialCommon(l.chEla, dur)
+func (l *PrefaceListener) DialEla(addr string, dur time.Duration) (net.Conn, error) {
+	apc, ok := l.ch[addr]
+	if !ok {
+		return nil, fmt.Errorf("'%v' not registered in proxy", addr)
+	}
+	return dialCommon(apc.ela, dur)
 }
 
 type readerConn struct {
@@ -193,9 +222,7 @@ func (lis *DialListener) Accept() (net.Conn, error) {
 }
 
 // Close closes the listener.
-// Any blocked Accept operations will be unblocked and return errors.
 func (lis *DialListener) Close() (err error) {
-
 	return
 }
 

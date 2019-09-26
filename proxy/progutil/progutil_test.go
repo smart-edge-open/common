@@ -112,6 +112,8 @@ func TestPrefaceListenerDial(t *testing.T) {
 	defer lis.Close()
 	pl := progutil.NewPrefaceListener(lis)
 
+	pl.RegisterHost("127.0.0.1")
+
 	// Start dialing
 	dialErrC := make(chan error, 1)
 	go func() {
@@ -139,7 +141,7 @@ func TestPrefaceListenerDial(t *testing.T) {
 	go func() {
 		defer close(readErrC)
 
-		conn, err := pl.DialEva("", time.Second)
+		conn, err := pl.DialEva("127.0.0.1", time.Second)
 		if err != nil {
 			readErrC <- err
 			return

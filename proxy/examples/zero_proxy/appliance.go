@@ -22,7 +22,9 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	logger "github.com/otcshare/common/log"
 	"log"
+	"log/syslog"
 	"net"
 	"os"
 	"os/signal"
@@ -63,6 +65,7 @@ func dialController(ctx context.Context, addr string) {
 func main() {
 	var port = flag.String("port", "", "port to connect to cloud proxy on")
 
+	logger.SetLevel(syslog.LOG_DEBUG)
 	flag.Parse()
 	if *port == "" {
 		log.Fatal("[edge] Required flag 'port' was missing")
@@ -71,7 +74,7 @@ func main() {
 	fmt.Println("[edge] Running Edge Appliance")
 
 	// Connect to cloud controller
-	cloudAddr, err := net.ResolveTCPAddr("tcp", "localhost:"+*port)
+	cloudAddr, err := net.ResolveTCPAddr("tcp", "127.0.0.1:"+*port)
 	if err != nil {
 		log.Fatal("error resolving cloud addr: %v", err)
 	}

@@ -19,7 +19,9 @@ package main
 import (
 	"context"
 	"fmt"
+	logger "github.com/otcshare/common/log"
 	"log"
+	"log/syslog"
 	"net"
 	"os"
 	"os/signal"
@@ -44,7 +46,7 @@ func dialAppliance(id string, ctx context.Context, pl *progutil.PrefaceListener)
 		case <-time.After(1 * time.Second):
 			if cli == nil {
 				log.Print(id + ": Dial()'ling appliance")
-				cc, err := grpc.Dial("", grpc.WithBlock(),
+				cc, err := grpc.Dial("127.0.0.1", grpc.WithBlock(),
 					grpc.WithInsecure(), grpc.WithDialer(pl.DialEva))
 				if err != nil {
 					log.Printf(id+": [cloud] error dialing appliance: %v", err)
@@ -67,9 +69,10 @@ func dialAppliance(id string, ctx context.Context, pl *progutil.PrefaceListener)
 
 func main() {
 	fmt.Println("[cloud] Running Cloud Controller")
+	logger.SetLevel(syslog.LOG_DEBUG)
 
 	// Listen
-	lis, err := net.Listen("tcp", ":3333")
+	lis, err := net.Listen("tcp", "127.0.0.1:3333")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -77,12 +80,15 @@ func main() {
 	pl := progutil.NewPrefaceListener(lis)
 
 	// Print ephemeral port so example app can discover it by parsing logs
-	_, port, _ := net.SplitHostPort(lis.Addr().String())
+	host, port, _ := net.SplitHostPort(lis.Addr().String())
 	fmt.Println("[cloud] Listening on port " + port)
 
 	// Create gRPC server
 	srv := grpc.NewServer()
 	pb.RegisterHelloServiceServer(srv, new(helloService))
+
+	// Register our appliance into proxy
+	pl.RegisterHost(host)
 
 	// Dial appliance and call every second
 	ctx, cancel := context.WithCancel(context.Background())
