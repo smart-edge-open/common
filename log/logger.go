@@ -25,7 +25,7 @@ import (
 	"sync"
 	"time"
 
-	slog "github.com/open-ness/common/syslog"
+	slog "github.com/open-ness/common/log/syslog"
 )
 
 // Logger implements syslog logging funcs and can be connected to a syslog

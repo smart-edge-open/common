@@ -23,7 +23,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/open-ness/common"
+	"github.com/open-ness/common/log"
 )
 
 func TestLoggerConnectSyslogLocal(t *testing.T) { // nolint: gocyclo

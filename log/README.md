@@ -37,7 +37,7 @@ larger monolith that tags itself. This may look like
 ```
 package api
 
-import "github.com/open-ness/common"
+import "github.com/open-ness/common/log"
 
 var log = log.DefaultLogger.WithField("component", "api")
 
