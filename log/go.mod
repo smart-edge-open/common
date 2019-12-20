@@ -1,3 +1,3 @@
-module github.com/otcshare/common/log
+module github.com/open-ness/common/log
 
 go 1.12
