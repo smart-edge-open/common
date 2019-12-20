@@ -1,3 +1,8 @@
+```text
+SPDX-License-Identifier: Apache-2.0
+Copyright (c) 2019 Intel Corporation
+```
+
 # Prog - Proxy+Gateway HTTP/2 Intermediary
 
 A dynamic layer 7 proxy and gateway for HTTP/2 connections
