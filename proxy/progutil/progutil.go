@@ -188,7 +188,7 @@ func (lis *DialListener) Accept() (net.Conn, error) {
 		// So we log when all (non-zero) connections we have are in use
 		log.Debugf("%v DialListener: ConnPool: %v/%v",
 			lis.Name, lis.active, lis.established)
-		log.Debugf("%v DialListener: dialling %v", lis.Name, lis.RemoteAddr)
+		log.Debugf("%v DialListener: dialing %v", lis.Name, lis.RemoteAddr)
 	}
 
 	// Last connection in use (or no connections), make a new one
@@ -201,7 +201,13 @@ func (lis *DialListener) Accept() (net.Conn, error) {
 	}
 
 	// Send our ID
-	conn.Write([]byte(lis.Name))
+	n, err := conn.Write([]byte(lis.Name))
+	if err != nil {
+		return nil, err
+	}
+	if n != len(lis.Name) {
+		return nil, errors.New("Failed to write the identification string")
+	}
 	atomic.AddInt32(&lis.established, 1)
 
 	log.Debugf("%v DialListener connection established: ConnPool: %v/%v",
