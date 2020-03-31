@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/otcshare/common/log"
+	"github.com/open-ness/common/log"
 )
 
 func TestLoggerSetOutput(t *testing.T) {
