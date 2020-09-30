@@ -11,7 +11,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	logger "github.com/otcshare/common/log"
+	logger "github.com/open-ness/common/log"
 	"log"
 	"log/syslog"
 	"net"
@@ -21,8 +21,8 @@ import (
 	"time"
 
 	"github.com/golang/protobuf/ptypes/wrappers"
-	"github.com/otcshare/common/proxy/examples/zero_proxy/pb"
-	"github.com/otcshare/common/proxy/progutil"
+	"github.com/open-ness/common/proxy/examples/zero_proxy/pb"
+	"github.com/open-ness/common/proxy/progutil"
 	"google.golang.org/grpc"
 )
 
